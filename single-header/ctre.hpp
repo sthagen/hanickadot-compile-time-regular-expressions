@@ -273,7 +273,7 @@ template <size_t N> struct fixed_string {
 	size_t real_size{0};
 	bool correct_flag{true};
 	
-	template <typename T> constexpr fixed_string(const T (&input)[N]) noexcept {
+	template <typename T> constexpr fixed_string(const T (&input)[N+1]) noexcept {
 		if constexpr (std::is_same_v<T, char>) {
 			#if CTRE_STRING_IS_UTF8
 				size_t out{0};
@@ -400,10 +400,13 @@ template <size_t N> struct fixed_string {
 		}
 		return true;
 	}
+	constexpr operator std::basic_string_view<char32_t>() const noexcept {
+		return std::basic_string_view<char32_t>{content, size()};
+	}
 };
 
 template <> class fixed_string<0> {
-	static constexpr char32_t __empty[1] = {0};
+	static constexpr char32_t empty[1] = {0};
 public:
 	template <typename T> constexpr fixed_string(const T *) noexcept {
 		
@@ -421,29 +424,29 @@ public:
 		return 0;
 	}
 	constexpr const char32_t * begin() const noexcept {
-		return __empty;
+		return empty;
 	}
 	constexpr const char32_t * end() const noexcept {
-		return __empty + size();
+		return empty + size();
 	}
 	constexpr char32_t operator[](size_t) const noexcept {
 		return 0;
 	}
+	constexpr operator std::basic_string_view<char32_t>() const noexcept {
+		return std::basic_string_view<char32_t>{empty, 0};
+	}
 };
 
-template <typename CharT, size_t N> fixed_string(const CharT (&)[N]) -> fixed_string<N>;
+template <typename CharT, size_t N> fixed_string(const CharT (&)[N]) -> fixed_string<N-1>;
 template <size_t N> fixed_string(fixed_string<N>) -> fixed_string<N>;
 
-template <typename T, size_t N> class basic_fixed_string: public fixed_string<N> {
-	using parent = fixed_string<N>;
-public:
-	template <typename... Args> constexpr basic_fixed_string(Args && ... args) noexcept: parent(std::forward<Args>(args)...) { }
-};
-
-template <typename CharT, size_t N> basic_fixed_string(const CharT (&)[N]) -> basic_fixed_string<CharT, N>;
-template <typename CharT, size_t N> basic_fixed_string(basic_fixed_string<CharT, N>) -> basic_fixed_string<CharT, N>;
-
 }
+
+#if (__cpp_nontype_template_parameter_class || (__cpp_nontype_template_args >= 201911L))
+	#define CTLL_FIXED_STRING ctll::fixed_string
+#else
+	#define CTLL_FIXED_STRING const auto &
+#endif
 
 #endif
 
@@ -2249,6 +2252,10 @@ template <size_t Id, typename Name = void> struct captured_content {
 		constexpr CTRE_FORCE_INLINE operator bool() const noexcept {
 			return _matched;
 		}
+		
+		constexpr CTRE_FORCE_INLINE const auto * data() const noexcept {
+			return &*_begin;
+		}
 
 		constexpr CTRE_FORCE_INLINE auto size() const noexcept {
 			return static_cast<size_t>(std::distance(_begin, _end));
@@ -2280,6 +2287,19 @@ template <size_t Id, typename Name = void> struct captured_content {
 		
 		constexpr CTRE_FORCE_INLINE static size_t get_id() noexcept {
 			return Id;
+		}
+		
+		friend CTRE_FORCE_INLINE constexpr bool operator==(const storage & lhs, std::basic_string_view<char_type> rhs) noexcept {
+			return lhs.view() == rhs;
+		}
+		friend CTRE_FORCE_INLINE constexpr bool operator!=(const storage & lhs, std::basic_string_view<char_type> rhs) noexcept {
+			return lhs.view() != rhs;
+		}
+		friend CTRE_FORCE_INLINE constexpr bool operator==(std::basic_string_view<char_type> lhs, const storage & rhs) noexcept {
+			return lhs == rhs.view();
+		}
+		friend CTRE_FORCE_INLINE constexpr bool operator!=(std::basic_string_view<char_type> lhs, const storage & rhs) noexcept {
+			return lhs != rhs.view();
 		}
 	};
 };
@@ -2421,7 +2441,7 @@ public:
 #endif
 		return _captures.template select<Name>();
 	}
-	static constexpr size_t size() noexcept {
+	static constexpr size_t count() noexcept {
 		return sizeof...(Captures) + 1;
 	}
 	constexpr CTRE_FORCE_INLINE regex_results & matched() noexcept {
@@ -2460,6 +2480,14 @@ public:
 		return _captures.template select<0>().to_string();
 	}
 	
+	constexpr CTRE_FORCE_INLINE size_t size() const noexcept {
+		return _captures.template select<0>().size();
+	}
+	
+	constexpr CTRE_FORCE_INLINE const auto * data() const noexcept {
+		return _captures.template select<0>().data();
+	}
+	
 	constexpr CTRE_FORCE_INLINE regex_results & set_start_mark(Iterator pos) noexcept {
 		_captures.template select<0>().set_start(pos);
 		return *this;
@@ -2479,6 +2507,18 @@ public:
 		_captures.template select<Id>().set_end(pos).matched();
 		return *this;
 	}
+	friend CTRE_FORCE_INLINE constexpr bool operator==(const regex_results & lhs, std::basic_string_view<char_type> rhs) noexcept {
+		return lhs.view() == rhs;
+	}
+	friend CTRE_FORCE_INLINE constexpr bool operator!=(const regex_results & lhs, std::basic_string_view<char_type> rhs) noexcept {
+		return lhs.view() != rhs;
+	}
+	friend CTRE_FORCE_INLINE constexpr bool operator==(std::basic_string_view<char_type> lhs, const regex_results & rhs) noexcept {
+		return lhs == rhs.view();
+	}
+	friend CTRE_FORCE_INLINE constexpr bool operator!=(std::basic_string_view<char_type> lhs, const regex_results & rhs) noexcept {
+		return lhs != rhs.view();
+	}
 };
 
 template <typename Iterator, typename... Captures> regex_results(Iterator, ctll::list<Captures...>) -> regex_results<Iterator, Captures...>;
@@ -2494,7 +2534,7 @@ template <typename Iterator, typename... Captures> regex_results(Iterator, ctll:
 #endif
 
 namespace std {
-	template <typename... Captures> struct tuple_size<ctre::regex_results<Captures...>> : public std::integral_constant<size_t, ctre::regex_results<Captures...>::size()> { };
+	template <typename... Captures> struct tuple_size<ctre::regex_results<Captures...>> : public std::integral_constant<size_t, ctre::regex_results<Captures...>::count()> { };
 	
 	template <size_t N, typename... Captures> struct tuple_element<N, ctre::regex_results<Captures...>> {
 	public:
