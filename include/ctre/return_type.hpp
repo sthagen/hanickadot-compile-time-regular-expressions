@@ -2,16 +2,34 @@
 #define CTRE__RETURN_TYPE__HPP
 
 #include "id.hpp"
+#include "utf8.hpp"
 #include <type_traits>
 #include <tuple>
 #include <string_view>
 #include <string>
+#include <iterator>
+#ifdef _MSC_VER
+#include <memory>
+#endif
+#include <iosfwd>
+#if __has_include(<charconv>)
+#include <charconv>
+#endif
 
 namespace ctre {
-	
+
+constexpr auto is_random_accessible_f(const std::random_access_iterator_tag &) { return std::true_type{}; }
+constexpr auto is_random_accessible_f(...) { return std::false_type{}; }
+
+template <typename T> constexpr auto is_reverse_iterator_f(const std::reverse_iterator<T> &) { return std::true_type{}; }
+constexpr auto is_reverse_iterator_f(...) { return std::false_type{}; }
+
+template <typename T> constexpr bool is_random_accessible = decltype(is_random_accessible_f(std::declval<const T &>())){};
+template <typename T> constexpr bool is_reverse_iterator = decltype(is_reverse_iterator_f(std::declval<const T &>())){};
+
 struct not_matched_tag_t { };
 
-static constexpr inline auto not_matched = not_matched_tag_t{};
+constexpr inline auto not_matched = not_matched_tag_t{};
 	
 template <size_t Id, typename Name = void> struct captured_content {
 	template <typename Iterator> class storage {
@@ -51,32 +69,92 @@ template <size_t Id, typename Name = void> struct captured_content {
 			return _end;
 		}
 	
-		constexpr CTRE_FORCE_INLINE operator bool() const noexcept {
+		constexpr explicit CTRE_FORCE_INLINE operator bool() const noexcept {
 			return _matched;
 		}
 		
-		constexpr CTRE_FORCE_INLINE const auto * data() const noexcept {
-			return &*_begin;
+		template <typename It = Iterator> constexpr CTRE_FORCE_INLINE const auto * data_unsafe() const noexcept {
+			static_assert(!is_reverse_iterator<It>, "Iterator in your capture must not be reverse!");
+			
+			#if __cpp_char8_t >= 201811
+			if constexpr (std::is_same_v<Iterator, utf8_iterator>) {
+				return _begin.ptr;
+			} else { // I'm doing this to avoid warning about dead code
+			#endif
+			
+			#ifdef _MSC_VER
+			return std::to_address(_begin); // I'm enabling this only for MSVC for now, as some clang old versions with various libraries (random combinations) has different problems
+			#else
+			return &*_begin; 
+			#endif
+			
+			#if __cpp_char8_t >= 201811
+			}
+			#endif
+		}
+		
+		template <typename It = Iterator> constexpr CTRE_FORCE_INLINE const auto * data() const noexcept {
+			constexpr bool must_be_contiguous_nonreverse_iterator = is_random_accessible<typename std::iterator_traits<It>::iterator_category> && !is_reverse_iterator<It>;
+			
+			static_assert(must_be_contiguous_nonreverse_iterator, "To access result as a pointer you need to provide a random access iterator/range to regex (which is not reverse iterator based).");
+			
+			return data_unsafe();
 		}
 
 		constexpr CTRE_FORCE_INLINE auto size() const noexcept {
-			return static_cast<size_t>(std::distance(_begin, _end));
-		}
-
-		constexpr CTRE_FORCE_INLINE auto to_view() const noexcept {
-			return std::basic_string_view<char_type>(&*_begin, static_cast<size_t>(std::distance(_begin, _end)));
+			return static_cast<size_t>(std::distance(begin(), end()));
 		}
 		
-		constexpr CTRE_FORCE_INLINE auto to_string() const noexcept {
+		constexpr CTRE_FORCE_INLINE size_t unit_size() const noexcept {
+			#if __cpp_char8_t >= 201811
+			if constexpr (std::is_same_v<Iterator, utf8_iterator>) {
+				return static_cast<size_t>(std::distance(_begin.ptr, _end.ptr));
+			} else {
+				return static_cast<size_t>(std::distance(begin(), end()));
+			}
+			#else
+			return static_cast<size_t>(std::distance(begin(), end()));
+			#endif
+		}
+		
+#if __has_include(<charconv>)
+		template <typename R = int, typename... Ts> constexpr CTRE_FORCE_INLINE auto to_number(Ts && ... args) const noexcept -> R {
+			R result{0};
+			const auto view = to_view();
+			std::from_chars(view.data(), view.data() + view.size(), result, std::forward<Ts>(args)...);
+			return result;
+		}
+#endif
+		
+		template <typename T> struct identify;
+
+		template <typename It = Iterator> constexpr CTRE_FORCE_INLINE auto to_view() const noexcept {
+			// random access, because C++ (waving hands around)
+			constexpr bool must_be_nonreverse_contiguous_iterator = is_random_accessible<typename std::iterator_traits<std::remove_const_t<It>>::iterator_category> && !is_reverse_iterator<It>;
+			
+			static_assert(must_be_nonreverse_contiguous_iterator, "To convert capture into a basic_string_view you need to provide a pointer or a contiguous non-reverse iterator/range to regex.");
+	
+			return std::basic_string_view<char_type>(data_unsafe(), static_cast<size_t>(unit_size()));
+		}
+		
+		constexpr CTRE_FORCE_INLINE std::basic_string<char_type> to_string() const noexcept {
+			#if __cpp_char8_t >= 201811
+			if constexpr (std::is_same_v<Iterator, utf8_iterator>) {
+				return std::basic_string<char_type>(data_unsafe(), static_cast<size_t>(unit_size()));
+			} else {
+				return std::basic_string<char_type>(begin(), end());
+			}
+			#else
 			return std::basic_string<char_type>(begin(), end());
+			#endif
 		}
 		
 		constexpr CTRE_FORCE_INLINE auto view() const noexcept {
-			return std::basic_string_view<char_type>(&*_begin, static_cast<size_t>(std::distance(_begin, _end)));
+			return to_view();
 		}
 		
 		constexpr CTRE_FORCE_INLINE auto str() const noexcept {
-			return std::basic_string<char_type>(begin(), end());
+			return to_string();
 		}
 		
 		constexpr CTRE_FORCE_INLINE operator std::basic_string_view<char_type>() const noexcept {
@@ -102,6 +180,9 @@ template <size_t Id, typename Name = void> struct captured_content {
 		}
 		friend CTRE_FORCE_INLINE constexpr bool operator!=(std::basic_string_view<char_type> lhs, const storage & rhs) noexcept {
 			return bool(rhs) ? lhs != rhs.view() : false;
+		}
+		friend CTRE_FORCE_INLINE std::ostream & operator<<(std::ostream & str, const storage & rhs) {
+			return str << rhs.view();
 		}
 	};
 };
@@ -129,7 +210,7 @@ template <typename Head, typename... Tail> struct captures<Head, Tail...>: captu
 			return captures<Tail...>::template exists<Name>();
 		}
 	}
-#if (__cpp_nontype_template_parameter_class || (__cpp_nontype_template_args >= 201911L))
+#if CTRE_CNTTP_COMPILER_CHECK
 	template <ctll::fixed_string Name> CTRE_FORCE_INLINE static constexpr bool exists() noexcept {
 #else
 	template <const auto & Name> CTRE_FORCE_INLINE static constexpr bool exists() noexcept {
@@ -172,7 +253,7 @@ template <typename Head, typename... Tail> struct captures<Head, Tail...>: captu
 			return captures<Tail...>::template select<Name>();
 		}
 	}
-#if (__cpp_nontype_template_parameter_class || (__cpp_nontype_template_args >= 201911L))
+#if CTRE_CNTTP_COMPILER_CHECK
 	template <ctll::fixed_string Name> CTRE_FORCE_INLINE constexpr auto & select() const noexcept {
 #else
 	template <const auto & Name> CTRE_FORCE_INLINE constexpr auto & select() const noexcept {
@@ -197,7 +278,7 @@ template <> struct captures<> {
 	template <typename> CTRE_FORCE_INLINE static constexpr bool exists() noexcept {
 		return false;
 	}
-#if (__cpp_nontype_template_parameter_class || (__cpp_nontype_template_args >= 201911L))
+#if CTRE_CNTTP_COMPILER_CHECK
 	template <ctll::fixed_string> CTRE_FORCE_INLINE static constexpr bool exists() noexcept {
 #else
 	template <const auto &> CTRE_FORCE_INLINE static constexpr bool exists() noexcept {
@@ -210,7 +291,7 @@ template <> struct captures<> {
 	template <typename> CTRE_FORCE_INLINE constexpr auto & select() const noexcept {
 		return capture_not_exists;
 	}
-#if (__cpp_nontype_template_parameter_class || (__cpp_nontype_template_args >= 201911L))
+#if CTRE_CNTTP_COMPILER_CHECK
 	template <ctll::fixed_string> CTRE_FORCE_INLINE constexpr auto & select() const noexcept {
 #else
 	template <const auto &> CTRE_FORCE_INLINE constexpr auto & select() const noexcept {
@@ -236,7 +317,7 @@ public:
 	template <typename Name, typename = std::enable_if_t<decltype(_captures)::template exists<Name>()>> CTRE_FORCE_INLINE constexpr auto get() const noexcept {
 		return _captures.template select<Name>();
 	}
-#if (__cpp_nontype_template_parameter_class || (__cpp_nontype_template_args >= 201911L))
+#if CTRE_CNTTP_COMPILER_CHECK
 	template <ctll::fixed_string Name, typename = std::enable_if_t<decltype(_captures)::template exists<Name>()>> CTRE_FORCE_INLINE constexpr auto get() const noexcept {
 #else
 	template <const auto & Name, typename = std::enable_if_t<decltype(_captures)::template exists<Name>()>> CTRE_FORCE_INLINE constexpr auto get() const noexcept {
@@ -265,6 +346,12 @@ public:
 	constexpr CTRE_FORCE_INLINE explicit operator std::basic_string<char_type>() const noexcept {
 		return to_string();
 	}
+	
+#if __has_include(<charconv>)
+	template <typename R = int, typename... Ts> constexpr CTRE_FORCE_INLINE auto to_number(Ts && ... args) const noexcept -> R {
+		return _captures.template select<0>().template to_number<R>(std::forward<Ts>(args)...);
+	}
+#endif
 	
 	constexpr CTRE_FORCE_INLINE auto to_view() const noexcept {
 		return _captures.template select<0>().to_view();
@@ -309,6 +396,12 @@ public:
 		_captures.template select<Id>().set_end(pos).matched();
 		return *this;
 	}
+	constexpr auto begin() const noexcept {
+		return _captures.template select<0>().begin();
+	}
+	constexpr auto end() const noexcept {
+		return _captures.template select<0>().end();
+	}
 	friend CTRE_FORCE_INLINE constexpr bool operator==(const regex_results & lhs, std::basic_string_view<char_type> rhs) noexcept {
 		return bool(lhs) ? lhs.view() == rhs : false;
 	}
@@ -321,9 +414,18 @@ public:
 	friend CTRE_FORCE_INLINE constexpr bool operator!=(std::basic_string_view<char_type> lhs, const regex_results & rhs) noexcept {
 		return bool(rhs) ? lhs != rhs.view() : true;
 	}
+	friend CTRE_FORCE_INLINE std::ostream & operator<<(std::ostream & str, const regex_results & rhs) {
+		return str << rhs.view();
+	}
 };
 
+template <size_t Id, typename Iterator, typename... Captures> constexpr auto get(const regex_results<Iterator, Captures...> & results) noexcept {
+	return results.template get<Id>();
+}
+
 template <typename Iterator, typename... Captures> regex_results(Iterator, ctll::list<Captures...>) -> regex_results<Iterator, Captures...>;
+
+template <typename ResultIterator, typename Pattern> using return_type = decltype(regex_results(std::declval<ResultIterator>(), find_captures(Pattern{})));
 
 }
 

@@ -7,7 +7,7 @@ using namespace ctre::literals;
 using namespace ctre::test_literals;
 using namespace std::string_view_literals;
 
-#if (__cpp_nontype_template_parameter_class || (__cpp_nontype_template_args >= 201911L))
+#if CTRE_CNTTP_COMPILER_CHECK
 
 #define TEST_MATCH(id, pattern, subject) static_assert(ctre::match<pattern>(subject))
 
@@ -194,10 +194,41 @@ TEST_MATCH(113, "a+(?!b)", "aaaaaa");
 TEST_MATCH(114, "a+(?!b).", "aaaaaac");
 TEST_MATCH(115, "a+(?=b).", "aaaaaab");
 
+TEST_NOT_MATCH(116, "a++a", "aaa"sv);
+TEST_MATCH(117, "a++a*+", "aaa"sv);
+
+TEST_MATCH(118, "^(\\w+)", "WORD");
 
 
+TEST_MATCH(203, "(?=foo)foo", "foo");
+TEST_MATCH(204, "(?!notfoo)foo", "foo");
 
+TEST_MATCH(205, "ab(?<=ab)foo", "abfoo");
+TEST_MATCH(206, "ab(?<!foo)foo", "abfoo");
 
+// modes
+TEST_MATCH(207, "(?i)AB(?c)AB", "abAB");
+
+// bug
+
+TEST_MATCH(210, "x+?", "x");
+TEST_MATCH(211, "x+", "x");
+TEST_MATCH(212, "x+?", L"x");
+TEST_MATCH(213, "x+", L"x");
+TEST_MATCH(214, "x+?", u8"x");
+TEST_MATCH(215, "x+", u8"x");
+TEST_SEARCH(216, "(?<!a)b", "xb");
+TEST_SEARCH(217, "(?<!a)b", L"xb");
+TEST_SEARCH(218, "(?<!a)b", u8"xb");
+// TODO need to check this out...
+//TEST_NOT_SEARCH(219, u8"(?<!č)b", u8"čb");
+//TEST_SEARCH(220, u8"(?<=č)b", u8"čb");
+TEST_SEARCH(221, u8"(?<!ě)b", u8"čb");
+TEST_NOT_SEARCH(222, u8"(?<=ě)b", u8"čb");
+
+//atomic groups (yet unsupported)
+TEST_MATCH(223, "(?>abc)?", "abc");
+TEST_MATCH(224, "(?>abc)?", "");
 
 
 

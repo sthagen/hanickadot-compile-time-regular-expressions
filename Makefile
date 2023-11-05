@@ -1,15 +1,17 @@
-.PHONY: default all clean grammar compare single-header single-header/ctre.hpp
+.PHONY: default all clean grammar compare single-header single-header/ctre.hpp single-header/ctre-unicode.hpp single-header/unicode-db.hpp
 
 default: all
 	
 TARGETS := $(wildcard tests/benchmark-exec/*.cpp)
 IGNORE := $(wildcard tests/benchmark/*.cpp) $(wildcard tests/benchmark-exec/*.cpp)
 
-DESATOMAT := /www/root/desatomat/console/desatomat.php
+DESATOMAT := /bin/false
 
-CPP_STANDARD := $(shell ./cpp-20-check.sh $(CXX))
+CXX_STANDARD := 20
 
-override CXXFLAGS := $(CXXFLAGS) $(CPP_STANDARD) -Iinclude -O3 -pedantic -Wall -Wextra
+PEDANTIC:=-pedantic
+
+override CXXFLAGS := $(CXXFLAGS) -std=c++$(CXX_STANDARD) -Iinclude -O3 $(PEDANTIC) -Wall -Wextra -Werror -Wconversion
 LDFLAGS := 
 
 TESTS := $(wildcard tests/*.cpp) $(wildcard tests/benchmark/*.cpp)
@@ -28,7 +30,7 @@ $(TRUE_TARGETS): %: %.o
 	$(CXX)  $< $(LDFLAGS) -o $@ 
 	
 $(OBJECTS): %.o: %.cpp
-	time $(CXX) $(CXXFLAGS) -MMD -c $< -o $@
+	$(CXX) $(CXXFLAGS) -MMD -c $< -o $@
 
 -include $(DEPEDENCY_FILES)
 
@@ -59,7 +61,10 @@ mtent12.txt: mtent12.zip
 	unzip -o mtent12.zip
 	touch mtent12.txt
 
-single-header: single-header/ctre.hpp
+single-header: single-header/ctre.hpp single-header/ctre-unicode.hpp single-header/unicode-db.hpp
+
+single-header/unicode-db.hpp: include/unicode-db/unicode-db.hpp
+	cp $+ $@
 
 single-header/ctre.hpp:
 	python3 -m quom include/ctre.hpp ctre.hpp.tmp
@@ -68,6 +73,14 @@ single-header/ctre.hpp:
 	echo "*/" >> single-header/ctre.hpp
 	cat ctre.hpp.tmp >> single-header/ctre.hpp
 	rm ctre.hpp.tmp
+
+single-header/ctre-unicode.hpp:
+	python3 -m quom include/ctre-unicode.hpp ctre-unicode.hpp.tmp
+	echo "/*" > single-header/ctre-unicode.hpp
+	cat LICENSE >> single-header/ctre-unicode.hpp
+	echo "*/" >> single-header/ctre-unicode.hpp
+	cat ctre-unicode.hpp.tmp >> single-header/ctre-unicode.hpp
+	rm ctre-unicode.hpp.tmp
 	
 REPEAT:=10
 

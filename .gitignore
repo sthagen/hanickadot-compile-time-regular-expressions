@@ -1,5 +1,6 @@
 *.o
 *.d
+**/*.tmp
 test
 result
 tests/benchmark-exec/*
@@ -17,3 +18,5 @@ tests/benchmark-range/*
 !tests/benchmark-range/*.cpp
 !tests/benchmark-range/*.hpp
 build
+cmake-build-*/*
+.idea/*

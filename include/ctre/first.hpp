@@ -2,7 +2,6 @@
 #define CTRE__FIRST__HPP
 
 #include "atoms.hpp"
-#include "atoms_characters.hpp"
 #include "atoms_unicode.hpp"
 
 namespace ctre {
@@ -46,14 +45,38 @@ constexpr auto first(ctll::list<Content...> l, ctll::list<empty, Tail...>) noexc
 	return first(l, ctll::list<Tail...>{});
 }
 
+// boundary
+template <typename... Content, typename CharLike, typename... Tail> 
+constexpr auto first(ctll::list<Content...> l, ctll::list<boundary<CharLike>, Tail...>) noexcept {
+	return first(l, ctll::list<Tail...>{});
+}
+
 // asserts
 template <typename... Content, typename... Tail> 
-constexpr auto first(ctll::list<Content...> l, ctll::list<assert_begin, Tail...>) noexcept {
+constexpr auto first(ctll::list<Content...> l, ctll::list<assert_subject_begin, Tail...>) noexcept {
 	return first(l, ctll::list<Tail...>{});
 }
 
 template <typename... Content, typename... Tail> 
-constexpr auto first(ctll::list<Content...> l, ctll::list<assert_end, Tail...>) noexcept {
+constexpr auto first(ctll::list<Content...> l, ctll::list<assert_subject_end, Tail...>) noexcept {
+	return l;
+}
+
+template <typename... Content, typename... Tail> 
+constexpr auto first(ctll::list<Content...> l, ctll::list<assert_subject_end_line, Tail...>) noexcept {
+	// FIXME allow endline here
+	return l;
+}
+
+template <typename... Content, typename... Tail> 
+constexpr auto first(ctll::list<Content...> l, ctll::list<assert_line_begin, Tail...>) noexcept {
+	// FIXME line begin is a bit different than subject begin
+	return first(l, ctll::list<Tail...>{});
+}
+
+template <typename... Content, typename... Tail> 
+constexpr auto first(ctll::list<Content...> l, ctll::list<assert_line_end, Tail...>) noexcept {
+	// FIXME line end is a bit different than subject begin
 	return l;
 }
 
@@ -61,6 +84,12 @@ constexpr auto first(ctll::list<Content...> l, ctll::list<assert_end, Tail...>) 
 template <typename... Content, typename... Seq, typename... Tail> 
 constexpr auto first(ctll::list<Content...> l, ctll::list<sequence<Seq...>, Tail...>) noexcept {
 	return first(l, ctll::list<Seq..., Tail...>{});
+}
+
+// atomic group
+template <typename... Content, typename... Seq, typename... Tail> 
+constexpr auto first(ctll::list<Content...> l, ctll::list<atomic_group<Seq...>, Tail...>) noexcept {
+	return first(l, ctll::list<possessive_repeat<1, 1, Seq...>, Tail...>{});
 }
 
 // plus
@@ -138,6 +167,18 @@ constexpr auto first(ctll::list<Content...>, ctll::list<lookahead_positive<Seq..
 	return ctll::list<can_be_anything>{};
 }
 
+// lookbehind_negative TODO fixme
+template <typename... Content, typename... Seq, typename... Tail> 
+constexpr auto first(ctll::list<Content...>, ctll::list<lookbehind_negative<Seq...>, Tail...>) noexcept {
+	return ctll::list<can_be_anything>{};
+}
+
+// lookbehind_positive
+template <typename... Content, typename... Seq, typename... Tail> 
+constexpr auto first(ctll::list<Content...>, ctll::list<lookbehind_positive<Seq...>, Tail...>) noexcept {
+	return ctll::list<can_be_anything>{};
+}
+
 // lookahead_negative TODO fixme
 template <typename... Content, typename... Seq, typename... Tail> 
 constexpr auto first(ctll::list<Content...>, ctll::list<lookahead_negative<Seq...>, Tail...>) noexcept {
@@ -201,6 +242,17 @@ constexpr auto first(ctll::list<Content...> l, ctll::list<select<>, Tail...>) no
 }
 
 
+// unicode property => anything
+template <typename... Content, typename PropertyType, PropertyType Property, typename... Tail> 
+constexpr auto first(ctll::list<Content...>, ctll::list<ctre::binary_property<PropertyType, Property>, Tail...>) noexcept {
+	return ctll::list<can_be_anything>{};
+}
+
+template <typename... Content, typename PropertyType, PropertyType Property, auto Value, typename... Tail> 
+constexpr auto first(ctll::list<Content...>, ctll::list<ctre::property<PropertyType, Property, Value>, Tail...>) noexcept {
+	return ctll::list<can_be_anything>{};
+}
+
 // characters / sets
 
 template <typename... Content, auto V, typename... Tail> 
@@ -248,7 +300,7 @@ template <typename... Content> constexpr auto calculate_first(Content...) noexce
 
 // calculate mutual exclusivity
 template <typename... Content> constexpr size_t calculate_size_of_first(ctre::negative_set<Content...>) {
-	return 1 + 1 * sizeof...(Content);
+	return 1 + calculate_size_of_first(ctre::set<Content...>{});
 }
 
 template <auto... V> constexpr size_t calculate_size_of_first(ctre::enumeration<V...>) {
@@ -270,12 +322,12 @@ template <typename... Content> constexpr size_t calculate_size_of_first(ctre::se
 }
 
 template <auto A, typename CB> constexpr int64_t negative_helper(ctre::character<A>, CB & cb, int64_t start) {
-	if (A != std::numeric_limits<int64_t>::min()) {
+	if (A != (std::numeric_limits<int64_t>::min)()) {
 		if (start < A) {
 			cb(start, A-1);
 		}
 	}
-	if (A != std::numeric_limits<int64_t>::max()) {
+	if (A != (std::numeric_limits<int64_t>::max)()) {
 		return A+1;
 	} else {
 		return A;
@@ -283,12 +335,12 @@ template <auto A, typename CB> constexpr int64_t negative_helper(ctre::character
 }  
 
 template <auto A, auto B, typename CB> constexpr int64_t negative_helper(ctre::char_range<A,B>, CB & cb, int64_t start) {
-	if (A != std::numeric_limits<int64_t>::min()) {
+	if (A != (std::numeric_limits<int64_t>::min)()) {
 		if (start < A) {
 			cb(start, A-1);
 		}
 	}
-	if (B != std::numeric_limits<int64_t>::max()) {
+	if (B != (std::numeric_limits<int64_t>::max)()) {
 		return B+1;
 	} else {
 		return B;
@@ -308,19 +360,29 @@ template <typename CB> constexpr int64_t negative_helper(ctre::set<>, CB &, int6
 	return start;
 }
 
+template <typename PropertyType, PropertyType Property, typename CB> 
+constexpr auto negative_helper(ctre::binary_property<PropertyType, Property>, CB &&, int64_t start) {
+	return start;
+}
+
+template <typename PropertyType, PropertyType Property, auto Value, typename CB> 
+constexpr auto negative_helper(ctre::property<PropertyType, Property, Value>, CB &&, int64_t start) {
+	return start;
+}
+
 template <typename Head, typename... Rest, typename CB> constexpr int64_t negative_helper(ctre::set<Head, Rest...>, CB & cb, int64_t start) {
 	start = negative_helper(Head{}, cb, start);
 	return negative_helper(ctre::set<Rest...>{}, cb, start);
 }
 
-template <typename Head, typename... Rest, typename CB> constexpr void negative_helper(ctre::negative_set<Head, Rest...>, CB && cb, int64_t start = std::numeric_limits<int64_t>::min()) {
+template <typename Head, typename... Rest, typename CB> constexpr void negative_helper(ctre::negative_set<Head, Rest...>, CB && cb, int64_t start = (std::numeric_limits<int64_t>::min)()) {
 	start = negative_helper(Head{}, cb, start);
 	negative_helper(ctre::negative_set<Rest...>{}, std::forward<CB>(cb), start);
 }
 
-template <typename CB> constexpr void negative_helper(ctre::negative_set<>, CB && cb, int64_t start = std::numeric_limits<int64_t>::min()) {
-	if (start < std::numeric_limits<int64_t>::max()) {
-		cb(start, std::numeric_limits<int64_t>::max());
+template <typename CB> constexpr void negative_helper(ctre::negative_set<>, CB && cb, int64_t start = (std::numeric_limits<int64_t>::min)()) {
+	if (start < (std::numeric_limits<int64_t>::max)()) {
+		cb(start, (std::numeric_limits<int64_t>::max)());
 	}
 }
 
@@ -354,10 +416,10 @@ template <size_t Capacity> class point_set {
 		auto first = begin();
 		auto last = end();
 		auto it = first;
-		size_t count = std::distance(first, last);
-		while (count > 0) {
+		auto count = std::distance(first, last);
+                while (count != 0) {
 			it = first;
-			size_t step = count / 2;
+			auto step = count / 2;
 			std::advance(it, step);
 			if (*it < obj) {
 				first = ++it;
@@ -450,8 +512,10 @@ public:
 	template <auto A, auto B> constexpr void populate(ctre::char_range<A,B>) {
 		insert(A,B);
 	}
-	constexpr void populate(can_be_anything) {
-		insert(std::numeric_limits<int64_t>::min(), std::numeric_limits<int64_t>::max());
+	constexpr void populate(...) {
+		points[0].low = (std::numeric_limits<int64_t>::min)();
+		points[0].high = (std::numeric_limits<int64_t>::max)();
+		used = 1;
 	}
 	template <typename... Content> constexpr void populate(ctre::negative_set<Content...> nset) {
 		negative_helper(nset, [&](int64_t low, int64_t high){

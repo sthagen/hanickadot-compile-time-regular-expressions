@@ -4,6 +4,7 @@
 #include <utility>
 #include <cstddef>
 #include <string_view>
+#include <array>
 #include <cstdint>
 
 namespace ctll {
@@ -36,14 +37,18 @@ constexpr length_value_t length_and_value_of_utf16_code_point(uint16_t first_uni
 	else return {first_unit, 1};
 }
 
+struct construct_from_pointer_t { };
+
+constexpr auto construct_from_pointer = construct_from_pointer_t{};
+
 template <size_t N> struct fixed_string {
 	char32_t content[N] = {};
 	size_t real_size{0};
 	bool correct_flag{true};
 	
-	template <typename T> constexpr fixed_string(const T (&input)[N+1]) noexcept {
+	template <typename T> constexpr fixed_string(construct_from_pointer_t, const T * input) noexcept {
 		if constexpr (std::is_same_v<T, char>) {
-			#if CTRE_STRING_IS_UTF8
+			#ifdef CTRE_STRING_IS_UTF8
 				size_t out{0};
 				for (size_t i{0}; i < N; ++i) {
 					if ((i == (N-1)) && (input[i] == 0)) break;
@@ -119,7 +124,7 @@ template <size_t N> struct fixed_string {
 				if (info.length == 2) {
 					if (++i < N) {
 						if ((input[i] & 0b1111'1100'0000'0000) == 0b1101'1100'0000'0000) {
-							content[out++] = (info.value << 10) | (input[i] & 0b0000'0011'1111'1111);
+							content[out++] = ((info.value << 10) | (input[i] & 0b0000'0011'1111'1111)) + 0x10000;
 						} else {
 							correct_flag = false;
 							break;
@@ -133,12 +138,16 @@ template <size_t N> struct fixed_string {
 			real_size = out;
 		} else if constexpr (std::is_same_v<T, wchar_t> || std::is_same_v<T, char32_t>) {
 			for (size_t i{0}; i < N; ++i) {
-				content[i] = input[i];
+				content[i] = static_cast<char32_t>(input[i]);
 				if ((i == (N-1)) && (input[i] == 0)) break;
 				real_size++;
 			}
 		}
 	}
+	
+	template <typename T> constexpr fixed_string(const std::array<T, N> & in) noexcept: fixed_string{construct_from_pointer, in.data()} { }
+	template <typename T> constexpr fixed_string(const T (&input)[N+1]) noexcept: fixed_string{construct_from_pointer, input} { }
+	
 	constexpr fixed_string(const fixed_string & other) noexcept {
 		for (size_t i{0}; i < N; ++i) {
 			content[i] = other.content[i];
@@ -206,14 +215,10 @@ public:
 };
 
 template <typename CharT, size_t N> fixed_string(const CharT (&)[N]) -> fixed_string<N-1>;
+template <typename CharT, size_t N> fixed_string(const std::array<CharT,N> &) -> fixed_string<N>;
+
 template <size_t N> fixed_string(fixed_string<N>) -> fixed_string<N>;
 
 }
-
-#if (__cpp_nontype_template_parameter_class || (__cpp_nontype_template_args >= 201911L))
-	#define CTLL_FIXED_STRING ctll::fixed_string
-#else
-	#define CTLL_FIXED_STRING const auto &
-#endif
 
 #endif

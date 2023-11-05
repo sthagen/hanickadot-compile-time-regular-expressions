@@ -5,67 +5,143 @@
 
 namespace ctre {
 
-template <typename BeginIterator, typename EndIterator, typename RE> struct regex_range {
+template <typename> constexpr bool is_range = false;
+
+template <typename BeginIterator, typename EndIterator, typename RE, typename ResultIterator = BeginIterator> struct regex_range {
 	BeginIterator _begin;
-	const EndIterator _end;
-	constexpr regex_range(BeginIterator begin, EndIterator end) noexcept: _begin{begin}, _end{end} { }
+	EndIterator _end;
 	
-	constexpr auto begin() const noexcept {
-		return regex_iterator<BeginIterator, EndIterator, RE>(_begin, _end);
+	constexpr CTRE_FORCE_INLINE regex_range(BeginIterator begin, EndIterator end) noexcept: _begin{begin}, _end{end} { }
+	
+	constexpr CTRE_FORCE_INLINE auto begin() const noexcept {
+		return regex_iterator<BeginIterator, EndIterator, RE, ResultIterator>(_begin, _end);
 	}
-	constexpr auto end() const noexcept {
+	constexpr CTRE_FORCE_INLINE auto end() const noexcept {
 		return regex_end_iterator{};
 	}
 };
 
+template <typename... Ts> constexpr bool is_range<regex_range<Ts...>> = true;
 
-template <typename BeginIterator, typename EndIterator, typename RE> constexpr auto range(BeginIterator begin, EndIterator end, RE) noexcept {
-	return regex_range<BeginIterator, EndIterator, RE>(begin, end);
+template <typename BeginIterator, typename EndIterator, typename RE, typename ResultIterator = BeginIterator> struct regex_split_range {
+	BeginIterator _begin;
+	EndIterator _end;
+	
+	constexpr CTRE_FORCE_INLINE regex_split_range(BeginIterator begin, EndIterator end) noexcept: _begin{begin}, _end{end} { }
+	
+	constexpr CTRE_FORCE_INLINE auto begin() const noexcept {
+		return regex_split_iterator<BeginIterator, EndIterator, RE, ResultIterator>(_begin, _end);
+	}
+	constexpr CTRE_FORCE_INLINE auto end() const noexcept {
+		return regex_end_iterator{};
+	}
+};
+
+template <typename... Ts> constexpr bool is_range<regex_split_range<Ts...>> = true;
+
+template <typename Range, typename RE> struct multi_subject_range {
+	struct end_iterator { };
+	
+	using first_type = decltype(std::declval<Range>().begin());
+	using last_type = decltype(std::declval<Range>().end());
+	
+	struct iterator {
+		using value_type = decltype(RE::exec(std::declval<typename std::iterator_traits<first_type>::value_type>()));
+		using iterator_category = std::forward_iterator_tag;
+		using pointer = void;
+		using reference = const value_type &;
+		using difference_type = int;
+		
+		first_type first{};
+		last_type last{};
+		value_type current_result{};
+		
+		constexpr CTRE_FORCE_INLINE iterator() noexcept = default;
+		constexpr CTRE_FORCE_INLINE iterator(first_type f, last_type l) noexcept: first{f}, last{l}, current_result{find_first()} { }
+		
+		constexpr CTRE_FORCE_INLINE value_type find_first() noexcept {
+			while (first != last) {
+				if (auto res = RE::exec(*first)) return res;
+				else ++first;
+			}
+			return {};
+		}
+		
+		constexpr CTRE_FORCE_INLINE const value_type & operator*() const noexcept {
+			return current_result;
+		}
+		
+		constexpr CTRE_FORCE_INLINE iterator & operator++() noexcept {
+			++first;
+			current_result = find_first();
+			return *this;
+		}
+		constexpr CTRE_FORCE_INLINE iterator operator++(int) noexcept {
+			auto previous = *this;
+			this->operator++();
+			return previous;
+		}
+		
+		friend constexpr CTRE_FORCE_INLINE bool operator==(const iterator & left, const iterator & right) noexcept {
+			return left.first == right.first;
+		}
+		friend constexpr CTRE_FORCE_INLINE bool operator!=(const iterator & left, const iterator & right) noexcept {
+			return !(left.first == right.first);
+		}
+		friend constexpr CTRE_FORCE_INLINE bool operator<(const iterator & left, const iterator & right) noexcept {
+			return left.first < right.first;
+		}
+		friend constexpr CTRE_FORCE_INLINE bool operator>(const iterator & left, const iterator & right) noexcept {
+			return left.first > right.first;
+		}
+		friend constexpr CTRE_FORCE_INLINE bool operator<=(const iterator & left, const iterator & right) noexcept {
+			return left.first <= right.first;
+		}
+		friend constexpr CTRE_FORCE_INLINE bool operator>=(const iterator & left, const iterator & right) noexcept {
+			return left.first >= right.first;
+		}
+		friend constexpr CTRE_FORCE_INLINE bool operator==(const iterator & left, end_iterator) noexcept {
+			return left.first == left.last;
+		}
+		friend constexpr CTRE_FORCE_INLINE bool operator==(end_iterator, const iterator & right) noexcept {
+			return right.first == right.last;
+		}
+		friend constexpr CTRE_FORCE_INLINE bool operator!=(const iterator & left, end_iterator) noexcept {
+			return left.first != left.last;
+		}
+		friend constexpr CTRE_FORCE_INLINE bool operator!=(end_iterator, const iterator & right) noexcept {
+			return right.first == right.last;
+		}
+	};
+	
+	Range range{};
+	
+	constexpr CTRE_FORCE_INLINE multi_subject_range() noexcept = default;
+	constexpr CTRE_FORCE_INLINE multi_subject_range(Range r) noexcept:  range{r} { }
+	
+	constexpr CTRE_FORCE_INLINE auto begin() const noexcept {
+		return iterator{range.begin(), range.end()};
+	}
+	constexpr CTRE_FORCE_INLINE auto end() const noexcept {
+		return end_iterator{};
+	}
+};
+
+// this is not regex range!
+template <typename... Ts> constexpr bool is_range<multi_subject_range<Ts...>> = true;
+
+
 }
 
-#if (__cpp_nontype_template_parameter_class || (__cpp_nontype_template_args >= 201911L))
-template <ctll::fixed_string input, typename BeginIterator, typename EndIterator> constexpr auto range(BeginIterator begin, EndIterator end) noexcept {
-	constexpr auto _input = input;
-	using tmp = typename ctll::parser<ctre::pcre, _input, ctre::pcre_actions>::template output<pcre_context<>>;
-	static_assert(tmp(), "Regular Expression contains syntax error.");
-	using re = decltype(front(typename tmp::output_type::stack_type()));
-	auto re_obj = ctre::regular_expression(re());
-	return range(begin, end, re_obj);
-}
-#endif
+#if defined __cpp_lib_ranges && __cpp_lib_ranges >= 201911
+namespace std::ranges {
 
-template <typename Subject, typename RE> constexpr auto range(const Subject & subject, RE re) noexcept {
-	return range(subject.begin(), subject.end(), re);
-}
-
-template <typename RE> constexpr auto range(const char * subject, RE re) noexcept {
-	return range(subject, zero_terminated_string_end_iterator(), re);
-}
-
-#if (__cpp_nontype_template_parameter_class || (__cpp_nontype_template_args >= 201911L))
-template <ctll::fixed_string input, typename Subject> constexpr auto range(const Subject & subject) noexcept {
-	constexpr auto _input = input;
-	using tmp = typename ctll::parser<ctre::pcre, _input, ctre::pcre_actions>::template output<pcre_context<>>;
-	static_assert(tmp(), "Regular Expression contains syntax error.");
-	using re = decltype(front(typename tmp::output_type::stack_type()));
-	auto re_obj = ctre::regular_expression(re());
-	return range(subject.begin(), subject.end(), re_obj);
-}
-#else
-template <auto & input, typename Subject> constexpr auto range(const Subject & subject) noexcept {
-	constexpr auto & _input = input;
-	using tmp = typename ctll::parser<ctre::pcre, _input, ctre::pcre_actions>::template output<pcre_context<>>;
-	static_assert(tmp(), "Regular Expression contains syntax error.");
-	using re = decltype(front(typename tmp::output_type::stack_type()));
-	auto re_obj = ctre::regular_expression(re());
-	return range(subject.begin(), subject.end(), re_obj);
-}
-#endif
-
-
-
-
+	template <typename... Ts> inline constexpr bool enable_borrowed_range<::ctre::regex_range<Ts...>> = true;
+	template <typename... Ts> inline constexpr bool enable_borrowed_range<::ctre::regex_split_range<Ts...>> = true;
+	template <typename Range, typename RE> inline constexpr bool enable_borrowed_range<::ctre::multi_subject_range<Range, RE>> = enable_borrowed_range<Range>;
+	template <typename Range, typename RE> inline constexpr bool enable_view<::ctre::multi_subject_range<Range, RE>> = true;
 
 }
+#endif 
 
 #endif
