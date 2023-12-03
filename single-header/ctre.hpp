@@ -3300,6 +3300,9 @@ struct utf8_range {
 #if __has_include(<charconv>)
 #include <charconv>
 #endif
+#if __cpp_concepts >= 202002L
+#include <concepts>
+#endif
 
 namespace ctre {
 
@@ -3411,8 +3414,6 @@ template <size_t Id, typename Name = void> struct captured_content {
 		}
 #endif
 		
-		template <typename T> struct identify;
-
 		template <typename It = Iterator> constexpr CTRE_FORCE_INLINE auto to_view() const noexcept {
 			// random access, because C++ (waving hands around)
 			constexpr bool must_be_nonreverse_contiguous_iterator = is_random_accessible<typename std::iterator_traits<std::remove_const_t<It>>::iterator_category> && !is_reverse_iterator<It>;
@@ -3471,6 +3472,23 @@ template <size_t Id, typename Name = void> struct captured_content {
 		}
 	};
 };
+
+#if __cpp_concepts >= 202002L
+template <typename T> concept capture_group = requires(const T & cap) {
+	{ T::get_id() } -> std::same_as<size_t>;
+	{ cap.view() };
+	{ cap.str() };
+	{ cap.to_string() };
+	{ cap.to_view() };
+	{ cap.unit_size() } -> std::same_as<size_t>;
+	{ cap.size() } -> std::same_as<size_t>;
+	{ static_cast<bool>(cap) };
+	{ cap.data() };
+	{ cap.data_unsafe() };
+	{ cap.begin() };
+	{ cap.end() };
+};
+#endif
 
 struct capture_not_exists_tag { };
 
@@ -3596,18 +3614,39 @@ public:
 	// special constructor for deducting
 	constexpr CTRE_FORCE_INLINE regex_results(Iterator, ctll::list<Captures...>) noexcept { }
 	
-	template <size_t Id, typename = std::enable_if_t<decltype(_captures)::template exists<Id>()>> CTRE_FORCE_INLINE constexpr auto get() const noexcept {
-		return _captures.template select<Id>();
+	template <size_t Id> CTRE_FORCE_INLINE constexpr auto get() const noexcept {
+		constexpr bool capture_of_provided_id_must_exists = decltype(_captures)::template exists<Id>();
+		static_assert(capture_of_provided_id_must_exists);
+		
+		if constexpr (capture_of_provided_id_must_exists) {
+			return _captures.template select<Id>();
+		} else {
+			return false;
+		}
 	}
-	template <typename Name, typename = std::enable_if_t<decltype(_captures)::template exists<Name>()>> CTRE_FORCE_INLINE constexpr auto get() const noexcept {
-		return _captures.template select<Name>();
+	template <typename Name> CTRE_FORCE_INLINE constexpr auto get() const noexcept {
+		constexpr bool capture_of_provided_name_must_exists = decltype(_captures)::template exists<Name>();
+		static_assert(capture_of_provided_name_must_exists);
+	
+		if constexpr (capture_of_provided_name_must_exists) {
+			return _captures.template select<Name>();
+		} else {
+			return false;
+		}
 	}
 #if CTRE_CNTTP_COMPILER_CHECK
-	template <ctll::fixed_string Name, typename = std::enable_if_t<decltype(_captures)::template exists<Name>()>> CTRE_FORCE_INLINE constexpr auto get() const noexcept {
+	template <ctll::fixed_string Name> CTRE_FORCE_INLINE constexpr auto get() const noexcept {
 #else
-	template <const auto & Name, typename = std::enable_if_t<decltype(_captures)::template exists<Name>()>> CTRE_FORCE_INLINE constexpr auto get() const noexcept {
+	template <const auto & Name> CTRE_FORCE_INLINE constexpr auto get() const noexcept {
 #endif
-		return _captures.template select<Name>();
+		constexpr bool capture_of_provided_name_must_exists = decltype(_captures)::template exists<Name>();
+		static_assert(capture_of_provided_name_must_exists);
+	
+		if constexpr (capture_of_provided_name_must_exists) {
+			return _captures.template select<Name>();
+		} else {
+			return false;
+		}
 	}
 	static constexpr size_t count() noexcept {
 		return sizeof...(Captures) + 1;
@@ -3709,6 +3748,16 @@ template <size_t Id, typename Iterator, typename... Captures> constexpr auto get
 }
 
 template <typename Iterator, typename... Captures> regex_results(Iterator, ctll::list<Captures...>) -> regex_results<Iterator, Captures...>;
+
+template <typename> struct is_regex_results_t: std::false_type { };
+
+template <typename Iterator, typename... Captures> struct is_regex_results_t<regex_results<Iterator, Captures...>>: std::true_type { };
+
+template <typename T> constexpr bool is_regex_results_v = is_regex_results_t<T>();
+
+#if __cpp_concepts >= 202002L
+template <typename T> concept capture_groups = is_regex_results_v<T>;
+#endif
 
 template <typename ResultIterator, typename Pattern> using return_type = decltype(regex_results(std::declval<ResultIterator>(), find_captures(Pattern{})));
 
@@ -5578,7 +5627,9 @@ template <CTRE_REGEX_INPUT_TYPE input, typename... Modifiers> static constexpr i
 
 template <CTRE_REGEX_INPUT_TYPE input, typename... Modifiers> static constexpr inline auto starts_with = regular_expression<typename regex_builder<input>::type, starts_with_method, ctll::list<singleline, Modifiers...>>();
 
-template <CTRE_REGEX_INPUT_TYPE input, typename... Modifiers> static constexpr inline auto range = regular_expression<typename regex_builder<input>::type, range_method, ctll::list<singleline, Modifiers...>>();
+template <CTRE_REGEX_INPUT_TYPE input, typename... Modifiers> static constexpr inline auto search_all = regular_expression<typename regex_builder<input>::type, range_method, ctll::list<singleline, Modifiers...>>();
+
+template <CTRE_REGEX_INPUT_TYPE input, typename... Modifiers> [[deprecated("use search_all")]] static constexpr inline auto range = regular_expression<typename regex_builder<input>::type, range_method, ctll::list<singleline, Modifiers...>>();
 
 template <CTRE_REGEX_INPUT_TYPE input, typename... Modifiers> static constexpr inline auto split = regular_expression<typename regex_builder<input>::type, split_method, ctll::list<singleline, Modifiers...>>();
 
@@ -5596,7 +5647,9 @@ template <CTRE_REGEX_INPUT_TYPE input, typename... Modifiers> static constexpr i
 
 template <CTRE_REGEX_INPUT_TYPE input, typename... Modifiers> static constexpr inline auto multiline_starts_with = regular_expression<typename regex_builder<input>::type, starts_with_method, ctll::list<multiline, Modifiers...>>();
 
-template <CTRE_REGEX_INPUT_TYPE input, typename... Modifiers> static constexpr inline auto multiline_range = regular_expression<typename regex_builder<input>::type, range_method, ctll::list<multiline, Modifiers...>>();
+template <CTRE_REGEX_INPUT_TYPE input, typename... Modifiers> static constexpr inline auto multiline_search_all = regular_expression<typename regex_builder<input>::type, range_method, ctll::list<multiline, Modifiers...>>();
+
+template <CTRE_REGEX_INPUT_TYPE input, typename... Modifiers> [[deprecated("use multiline_search_all")]] static constexpr inline auto multiline_range = regular_expression<typename regex_builder<input>::type, range_method, ctll::list<multiline, Modifiers...>>();
 
 template <CTRE_REGEX_INPUT_TYPE input, typename... Modifiers> static constexpr inline auto multiline_split = regular_expression<typename regex_builder<input>::type, split_method, ctll::list<multiline, Modifiers...>>();
 
