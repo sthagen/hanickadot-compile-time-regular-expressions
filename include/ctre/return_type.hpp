@@ -3,6 +3,7 @@
 
 #include "id.hpp"
 #include "utf8.hpp"
+#ifndef CTRE_IN_A_MODULE
 #include <type_traits>
 #include <tuple>
 #include <string_view>
@@ -18,6 +19,7 @@
 #endif
 #if __cpp_concepts >= 202002L
 #include <concepts>
+#endif
 #endif
 
 namespace ctre {
@@ -238,7 +240,7 @@ template <typename T> concept capture_group = requires(const T & cap) {
 
 struct capture_not_exists_tag { };
 
-static constexpr inline auto capture_not_exists = capture_not_exists_tag{};
+constexpr auto capture_not_exists = capture_not_exists_tag{};
 
 template <typename... Captures> struct captures;
 
@@ -513,7 +515,13 @@ public:
 		return bool(rhs) ? lhs != rhs.view() : true;
 	}
 	friend CTRE_FORCE_INLINE std::ostream & operator<<(std::ostream & str, const regex_results & rhs) {
+#ifdef CTRE_IN_A_MODULE
+		auto view = rhs.view();
+		str.write(view.data(), view.size());
+		return str;
+#else
 		return str << rhs.view();
+#endif
 	}
 };
 
