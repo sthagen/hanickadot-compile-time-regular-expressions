@@ -19,33 +19,28 @@ jobs:
   gcc:
     strategy:
       matrix:
-        gcc: [8, 9, 10, 11, 13]
+        gcc: [9, 10, 11, 13, 14, 15]
         standard: [17, 20]
       fail-fast: false
     name: "GCC ${{ matrix.gcc }} (C++${{ matrix.standard }})"
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
-      - name: "Install GCC"
-        uses: egor-tensin/setup-gcc@v1
-        with:
-          version: ${{ matrix.gcc }}
+      - run: sudo apt-get install g++-${{ matrix.gcc }}
       - uses: actions/checkout@v2
       - run: c++ -v
       - run: make CXX=c++ CXX_STANDARD=2a
         if: ${{ matrix.standard == '20' }}
-      - run: make CXX=c++ CXX_STANDARD=17
-        if: ${{ matrix.gcc < '9' && matrix.standard == '17' }}
       - run: make CXX=c++ CXX_STANDARD=17 CXXFLAGS=-DCTRE_ENABLE_LITERALS PEDANTIC=""
-        if: ${{ matrix.gcc >= '9' && matrix.standard == '17' }}
+        if: ${{ matrix.standard == '17' }}
   clang:
     strategy:
       matrix:
-        clang: [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
+        clang: [14, 15, 16, 17, 18, 19, 20]
         stdlib: ["libc++", "libstdc++"]
         standard: [17, 20]
       fail-fast: false
     name: "Clang ${{ matrix.clang }} (C++${{ matrix.standard }}, ${{ matrix.stdlib }})"
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - name: "Install Clang"
         uses: egor-tensin/setup-clang@v1
