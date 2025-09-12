@@ -53,9 +53,14 @@ static_assert(same_f(CTRE_GEN("(?:abc)"), ctre::string<'a','b','c'>()));
 static_assert(same_f(CTRE_GEN("\\x40"), ctre::character<char{0x40}>()));
 static_assert(same_f(CTRE_GEN("\\x7F"), ctre::character<char{0x7F}>()));
 // only characters with value < 128 are char otherwise they are internally char32_t
-static_assert(same_f(CTRE_GEN("\\x80"), ctre::character<char32_t{0x80}>()));
-static_assert(same_f(CTRE_GEN("\\xFF"), ctre::character<char32_t{0xFF}>()));
-static_assert(same_f(CTRE_GEN("\\x{FF}"), ctre::character<char32_t{0xFF}>()));
+constexpr unsigned char_length = (std::numeric_limits<char>::max)();
+constexpr bool char_is_unsigned = (char_length == 255);
+// I wish I could have operator implication here :(
+using expected_type = std::conditional_t<char_is_unsigned, char, char32_t>;
+static_assert(same_f(CTRE_GEN("\\x80"), ctre::character<expected_type{0x80}>()));
+static_assert(same_f(CTRE_GEN("\\xFF"), ctre::character<expected_type{0xFF}>()));
+static_assert(same_f(CTRE_GEN("\\x{FF}"), ctre::character<expected_type{0xFF}>()));
+
 static_assert(same_f(CTRE_GEN("\\x{FFF}"), ctre::character<char32_t{0xFFF}>()));
 static_assert(same_f(CTRE_GEN("\\x{ABCD}"), ctre::character<char32_t{0xABCD}>()));
 
